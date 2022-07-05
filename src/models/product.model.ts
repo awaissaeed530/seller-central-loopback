@@ -1,20 +1,8 @@
-import {Entity, model, property} from '@loopback/repository';
+import {model, property} from '@loopback/repository';
+import {BaseEntity} from '.';
 
 @model({settings: {strict: false}})
-export class Product extends Entity {
-  @property({
-    id: true,
-    type: 'String',
-    required: false,
-    index: {unique: true},
-    generated: true,
-    useDefaultIdType: false,
-    postgresql: {
-      dataType: 'uuid',
-    },
-  })
-  id?: string;
-
+export class Product extends BaseEntity {
   @property({
     type: 'string',
     required: true,

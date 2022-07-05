@@ -1,4 +1,5 @@
 export type CreateSubscriptionResponse = Subscription;
+export type GetSubscriptionResponse = Subscription;
 
 export interface Subscription {
   subscriptionId: string;

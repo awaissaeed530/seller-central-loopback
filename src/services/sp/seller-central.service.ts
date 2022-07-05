@@ -1,22 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {inject} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
-import {environment} from '../environments';
-import {SP_CLIENT} from '../keys';
+import {SP_CLIENT} from '../../keys';
 import {
-  CreateDestinationResponse,
   CreateFeedDocumentResponse,
   CreateFeedResponse,
-  CreateSubscriptionResponse,
-  Destination,
-  GetDestinationsResponse,
-  NotificationType,
   Product,
-  Subscription,
-} from '../models';
-import {SPClient} from '../types';
-
-const FEED_PROCESSING_DESTINATION = 'FeedProcessingFinished';
+} from '../../models';
+import {SPClient} from '../../types';
 
 export class SellerCentralService {
   constructor(@inject(SP_CLIENT) private readonly _spClient: SPClient) {}
@@ -129,63 +120,6 @@ export class SellerCentralService {
       operation: 'getFeed',
       path: {
         feedId: id,
-      },
-    });
-  }
-
-  async createFeedSubscription(): Promise<Subscription> {
-    const destination = await this.getDestination();
-    return this.createSubscription(
-      destination.destinationId,
-      NotificationType.FEED_PROCESSING_FINISHED,
-    );
-  }
-
-  private async getDestination(): Promise<Destination> {
-    const destinations = await this.getAllDestinations();
-    let destination: Destination;
-    if (destinations.length > 0) {
-      destination = destinations.find(
-        dest => dest.name === FEED_PROCESSING_DESTINATION,
-      ) as Destination;
-    } else {
-      destination = await this.createDestination(environment.SQS_ARN);
-    }
-    return destination;
-  }
-
-  private async createDestination(
-    sqsArn: string,
-  ): Promise<CreateDestinationResponse> {
-    return this._spClient.callAPI({
-      operation: 'createDestination',
-      body: {
-        name: FEED_PROCESSING_DESTINATION,
-        resourceSpecification: {
-          sqs: {arn: sqsArn},
-        },
-      },
-    });
-  }
-
-  private async getAllDestinations(): Promise<GetDestinationsResponse> {
-    return this._spClient.callAPI({
-      operation: 'getDestinations',
-    });
-  }
-
-  private async createSubscription(
-    destinationId: string,
-    notificationType: NotificationType,
-  ): Promise<CreateSubscriptionResponse> {
-    return this._spClient.callAPI({
-      operation: 'createSubscription',
-      body: {
-        payloadVersion: '1.0',
-        destinationId: destinationId,
-      },
-      path: {
-        notificationType: notificationType,
       },
     });
   }
