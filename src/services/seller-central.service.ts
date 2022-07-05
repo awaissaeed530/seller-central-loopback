@@ -1,13 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {inject} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
+import {environment} from '../environments';
 import {SP_CLIENT} from '../keys';
 import {
+  CreateDestinationResponse,
   CreateFeedDocumentResponse,
   CreateFeedResponse,
+  CreateSubscriptionResponse,
+  Destination,
+  GetDestinationsResponse,
+  NotificationType,
   Product,
+  Subscription,
 } from '../models';
 import {SPClient} from '../types';
+
+const FEED_PROCESSING_DESTINATION = 'FeedProcessingFinished';
 
 export class SellerCentralService {
   constructor(@inject(SP_CLIENT) private readonly _spClient: SPClient) {}
@@ -26,7 +35,7 @@ export class SellerCentralService {
     return catalog;
   }
 
-  async createProduct(product: Product) {
+  async uploadProduct(product: Product) {
     const feed = this.buildFeed(product);
     const feedDocuemnt = await this.createFeedDocument(feed.contentType);
     await this._spClient.upload(feedDocuemnt, feed);
@@ -124,32 +133,60 @@ export class SellerCentralService {
     });
   }
 
-  private async createNotification() {
-    const destination = await this._spClient.callAPI({
+  async createFeedSubscription(): Promise<Subscription> {
+    const destination = await this.getDestination();
+    return this.createSubscription(
+      destination.destinationId,
+      NotificationType.FEED_PROCESSING_FINISHED,
+    );
+  }
+
+  private async getDestination(): Promise<Destination> {
+    const destinations = await this.getAllDestinations();
+    let destination: Destination;
+    if (destinations.length > 0) {
+      destination = destinations.find(
+        dest => dest.name === FEED_PROCESSING_DESTINATION,
+      ) as Destination;
+    } else {
+      destination = await this.createDestination(environment.SQS_ARN);
+    }
+    return destination;
+  }
+
+  private async createDestination(
+    sqsArn: string,
+  ): Promise<CreateDestinationResponse> {
+    return this._spClient.callAPI({
       operation: 'createDestination',
       body: {
-        name: 'FeedProcessingFinished',
+        name: FEED_PROCESSING_DESTINATION,
         resourceSpecification: {
-          sqs: {
-            arn: 'arn:aws:sqs:us-east-1:641989866029:SP-API-SQS',
-          },
+          sqs: {arn: sqsArn},
         },
       },
     });
+  }
 
-    console.log(destination);
+  private async getAllDestinations(): Promise<GetDestinationsResponse> {
+    return this._spClient.callAPI({
+      operation: 'getDestinations',
+    });
+  }
 
-    const subscription = await this._spClient.callAPI({
+  private async createSubscription(
+    destinationId: string,
+    notificationType: NotificationType,
+  ): Promise<CreateSubscriptionResponse> {
+    return this._spClient.callAPI({
       operation: 'createSubscription',
       body: {
         payloadVersion: '1.0',
-        destinationId: destination.payload.destinationId,
+        destinationId: destinationId,
       },
       path: {
-        notificationType: 'FEED_PROCESSING_FINISHED',
+        notificationType: notificationType,
       },
     });
-
-    console.log(subscription);
   }
 }

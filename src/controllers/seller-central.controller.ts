@@ -2,7 +2,7 @@
 import {service} from '@loopback/core';
 import {get} from '@loopback/openapi-v3';
 import {getModelSchemaRef, param, post, requestBody} from '@loopback/rest';
-import {CreateFeedResponse, Product} from '../models';
+import {CreateFeedResponse, Product, Subscription} from '../models';
 import {SellerCentralService} from '../services';
 
 export class SellerCentralController {
@@ -43,7 +43,7 @@ export class SellerCentralController {
     })
     product: Omit<Product, 'id'>,
   ): Promise<CreateFeedResponse> {
-    return this.sellerCentralService.createProduct(product as Product);
+    return this.sellerCentralService.uploadProduct(product as Product);
   }
 
   @get('/amazon/feed/{id}', {
@@ -55,5 +55,16 @@ export class SellerCentralController {
   })
   async getFeedById(@param.path.string('id') id: string): Promise<any> {
     return this.sellerCentralService.getFeedById(id);
+  }
+
+  @post('/amazon/subscription', {
+    responses: {
+      '200': {
+        description: 'Synchronize Amazon Central Data',
+      },
+    },
+  })
+  async createFeedSubscription(): Promise<Subscription> {
+    return this.sellerCentralService.createFeedSubscription();
   }
 }
