@@ -2,20 +2,23 @@
 import {inject} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
 import {SP_CLIENT} from '../keys';
+import {
+  CreateFeedDocumentResponse,
+  CreateFeedResponse,
+  Product,
+} from '../models';
 import {SPClient} from '../types';
 
 export class SellerCentralService {
-  constructor(
-    @inject(SP_CLIENT) private readonly _spClient: SPClient
-  ) { }
+  constructor(@inject(SP_CLIENT) private readonly _spClient: SPClient) {}
 
   async getCatalogItems(): Promise<any> {
     const catalog = await this._spClient.callAPI({
       operation: 'listCatalogItems',
       query: {
-        MarketplaceId: "A1PA6795UKMFR9",
-        SellerSKU: "EN-LUVU-TKYV"
-      }
+        MarketplaceId: 'A1PA6795UKMFR9',
+        SellerSKU: 'EN-LUVU-TKYV',
+      },
     });
     if (catalog.errors) {
       throw new HttpErrors.BadRequest('Failed to fetch catalog items');
@@ -23,15 +26,24 @@ export class SellerCentralService {
     return catalog;
   }
 
-  async createProduct() {
-    const feedDocuemnt = await this.createFeed();
-    console.log(feedDocuemnt);
-    const feed = {
-      content: `<?xml version="1.0" encoding="iso-8859-1"?>
+  async createProduct(product: Product) {
+    const feed = this.buildFeed(product);
+    const feedDocuemnt = await this.createFeedDocument(feed.contentType);
+    await this._spClient.upload(feedDocuemnt, feed);
+    const feedData = await this.createFeed(
+      feedDocuemnt.feedDocumentId,
+      'POST_PRODUCT_DATA',
+    );
+    return feedData;
+  }
+
+  private buildFeed(product: Product): {content: string; contentType: string} {
+    return {
+      content: `<?xml version="1.0" encoding="utf-8"?>
       <AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">
         <Header>
-          <DocumentVersion>1.01</DocumentVersion>
+          <DocumentVersion>1.02</DocumentVersion>
           <MerchantIdentifier>ALAHBMS72DLLL</MerchantIdentifier>
         </Header>
         <MessageType>Product</MessageType>
@@ -40,58 +52,104 @@ export class SellerCentralService {
           <MessageID>1</MessageID>
           <OperationType>Create</OperationType>
           <Product>
-            <SKU>56789</SKU>
+            <SKU>${product.sku}</SKU>
             <StandardProductID>
               <Type>ASIN</Type>
-              <Value>B0EXAMPLEG</Value>
+              <Value>${product.asin}</Value>
             </StandardProductID>
-            <ProductTaxCode>A_GEN_NOTAX</ProductTaxCode>
             <DescriptionData>
-              <Title>Example Product Title</Title>
-              <Brand>Example Product Brand</Brand>
-              <Description>This is an example product description.</Description>
-              <BulletPoint>Example Bullet Point 1</BulletPoint>
-              <BulletPoint>Example Bullet Point 2</BulletPoint>
-              <MSRP currency="USD">25.19</MSRP>
-              <Manufacturer>Example Product Manufacturer</Manufacturer>
-              <ItemType>example-item-type</ItemType>
+              <Title>${product.title}</Title>
+              <Brand>${product.brand}</Brand>
+              <Description>${product.description}</Description>
+              <MSRP currency="${product.currency}">${product.price}</MSRP>
+              <Manufacturer>${product.manufacturer}</Manufacturer>
+              <ItemType>${product.itemType}</ItemType>
             </DescriptionData>
-            <ProductData>
-              <Health>
-                <ProductType>
-                  <HealthMisc>
-                    <Ingredients>Example Ingredients</Ingredients>
-                    <Directions>Example Directions</Directions>
-                  </HealthMisc>
-                </ProductType>
-              </Health>
-            </ProductData>
           </Product>
         </Message>
       </AmazonEnvelope>`,
-      contentType: 'text/xml; charset=utf-8'
+      contentType: 'text/xml; charset=utf-8',
     };
-    const res = await this._spClient.upload({
-      url: feedDocuemnt.payload?.url as string
-    }, feed);
-    console.log(res);
-    const feedData = await this._spClient.callAPI({
-      operation: 'POST_PRODUCT_DATA',
-      body: {
-        marketplaceIds: ['A1PA6795UKMFR9'],
-        feedType: 'POST_INVENTORY_AVAILABILITY_DATA',
-        inputFeedDocumentId: feedDocuemnt.payload?.feedDocumentId
-      }
-    });
-    console.log(feedData);
   }
 
-  private async createFeed() {
-    return this._spClient.callAPI({
-      operation: 'createFeedDocument',
-      body: {
-        contentType: 'text/xml; charset=UTF-8'
+  private async createFeedDocument(
+    contentType: string,
+  ): Promise<CreateFeedDocumentResponse> {
+    try {
+      const feedDocument = await this._spClient.callAPI({
+        operation: 'feeds.createFeedDocument',
+        body: {
+          contentType: contentType,
+        },
+      });
+      if (feedDocument.errors) {
+        throw new HttpErrors.BadRequest(feedDocument.errors.message);
       }
+      return feedDocument;
+    } catch (e) {
+      console.error(e);
+      throw new HttpErrors.BadRequest('Failed to create Feed Document');
+    }
+  }
+
+  private async createFeed(
+    feedDocumentId: string,
+    feedType: string,
+  ): Promise<CreateFeedResponse> {
+    try {
+      const feed = await this._spClient.callAPI({
+        operation: 'feeds.createFeed',
+        body: {
+          marketplaceIds: ['A1PA6795UKMFR9'],
+          inputFeedDocumentId: feedDocumentId,
+          feedType,
+        },
+      });
+      if (feed.errors) {
+        throw new HttpErrors.BadRequest(feed.errors.message);
+      }
+      return feed;
+    } catch (e) {
+      console.error(e);
+      throw new HttpErrors.BadRequest('Failed to create Feed Document');
+    }
+  }
+
+  async getFeedById(id: string) {
+    return this._spClient.callAPI({
+      operation: 'getFeed',
+      path: {
+        feedId: id,
+      },
     });
+  }
+
+  private async createNotification() {
+    const destination = await this._spClient.callAPI({
+      operation: 'createDestination',
+      body: {
+        name: 'FeedProcessingFinished',
+        resourceSpecification: {
+          sqs: {
+            arn: 'arn:aws:sqs:us-east-1:641989866029:SP-API-SQS',
+          },
+        },
+      },
+    });
+
+    console.log(destination);
+
+    const subscription = await this._spClient.callAPI({
+      operation: 'createSubscription',
+      body: {
+        payloadVersion: '1.0',
+        destinationId: destination.payload.destinationId,
+      },
+      path: {
+        notificationType: 'FEED_PROCESSING_FINISHED',
+      },
+    });
+
+    console.log(subscription);
   }
 }
