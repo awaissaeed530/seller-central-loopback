@@ -47,7 +47,7 @@ export class SubscriptionService {
         dest => dest.name === FEED_PROCESSING_DESTINATION,
       ) as Destination;
     } else {
-      destination = await this.createDestination(environment.SQS_ARN);
+      destination = await this.createDestination(environment.SQS_CONFIG.ARN);
     }
     return destination;
   }
